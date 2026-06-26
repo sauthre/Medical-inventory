@@ -15,6 +15,9 @@ function MedicineModal({ open, onClose, onSave, initial }) {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [allMedicines, setAllMedicines] = useState([]);
+  const [nameSuggestions, setNameSuggestions] = useState([]);
+  const [showNameDropdown, setShowNameDropdown] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -26,8 +29,39 @@ function MedicineModal({ open, onClose, onSave, initial }) {
         quantity: String(initial.quantity),
       } : emptyForm);
       setError('');
+      setShowNameDropdown(false);
+      medicinesApi.getAll().then(r => setAllMedicines(r.data)).catch(() => {});
     }
   }, [open, initial]);
+
+  useEffect(() => {
+    if (!form.name || form.name.length < 2) {
+      setNameSuggestions([]);
+      setShowNameDropdown(false);
+      return;
+    }
+    const seen = new Set();
+    const matches = allMedicines
+      .filter(m => {
+        if (!m.name.toLowerCase().includes(form.name.toLowerCase())) return false;
+        if (seen.has(m.name)) return false;
+        seen.add(m.name);
+        return true;
+      })
+      .slice(0, 8);
+    setNameSuggestions(matches);
+    setShowNameDropdown(matches.length > 0);
+  }, [form.name, allMedicines]);
+
+  const selectNameSuggestion = (med) => {
+    setForm(f => ({
+      ...f,
+      name: med.name,
+      manufacturer: med.manufacturer || f.manufacturer,
+      category: med.category || f.category,
+    }));
+    setShowNameDropdown(false);
+  };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -92,7 +126,29 @@ function MedicineModal({ open, onClose, onSave, initial }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className="label">Medicine Name *</label>
-              <input className="input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Paracetamol 500mg" required />
+              <div className="relative">
+                <input
+                  className="input"
+                  value={form.name}
+                  onChange={e => set('name', e.target.value)}
+                  onFocus={() => nameSuggestions.length > 0 && setShowNameDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowNameDropdown(false), 150)}
+                  placeholder="e.g. Paracetamol 500mg"
+                  required
+                />
+                {showNameDropdown && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-xl border border-gray-100 z-30 overflow-hidden max-h-48 overflow-y-auto">
+                    {nameSuggestions.map(m => (
+                      <button key={m.id} type="button"
+                        onMouseDown={() => selectNameSuggestion(m)}
+                        className="w-full text-left px-4 py-2.5 hover:bg-blue-50 transition-colors border-b border-gray-50 last:border-0">
+                        <div className="font-medium text-gray-900 text-sm">{m.name}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{m.manufacturer} · {m.category}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div>
               <label className="label">Manufacturer</label>

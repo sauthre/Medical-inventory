@@ -91,23 +91,40 @@ export const salesApi = {
   },
 
   // Calls the atomic PostgreSQL function
-  create: async ({ medicine_id, quantity_sold, customer_name = '' }) => {
+  create: async ({ medicine_id, quantity_sold, customer_name = '', discount_percent = null }) => {
     const { data, error } = await supabase.rpc('record_sale', {
-      p_medicine_id:   medicine_id,
-      p_quantity_sold: quantity_sold,
-      p_customer_name: customer_name,
+      p_medicine_id:      medicine_id,
+      p_quantity_sold:    quantity_sold,
+      p_customer_name:    customer_name,
+      p_discount_percent: discount_percent,
     });
     if (error) {
-      // Re-throw in the same shape Sales.jsx expects
       throw { response: { data: { error: error.message } } };
     }
-    // Normalise to the shape Sales.jsx already reads
     return {
       data: {
         sale: { total_revenue: data.total_revenue },
         remaining_stock: data.remaining_stock,
       },
     };
+  },
+
+  // Delete a sale and restore stock to the medicine (if it still exists)
+  remove: async (saleId, medicineId, quantitySold) => {
+    if (medicineId && quantitySold) {
+      const { data: med } = await supabase
+        .from('medicines')
+        .select('quantity')
+        .eq('id', medicineId)
+        .maybeSingle();
+      if (med) {
+        await supabase
+          .from('medicines')
+          .update({ quantity: med.quantity + quantitySold })
+          .eq('id', medicineId);
+      }
+    }
+    return ok(supabase.from('sales').delete().eq('id', saleId));
   },
 };
 

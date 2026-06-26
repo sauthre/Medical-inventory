@@ -53,16 +53,19 @@ CREATE POLICY "anon_all_sales"     ON sales     FOR ALL TO anon USING (true) WIT
 -- ── Functions ───────────────────────────────────────────────────
 
 -- 1. Atomic sale recording (deducts inventory in a transaction)
+--    p_discount_percent: if NULL, uses the medicine's stored discount
 CREATE OR REPLACE FUNCTION record_sale(
-  p_medicine_id   BIGINT,
-  p_quantity_sold INTEGER,
-  p_customer_name TEXT DEFAULT ''
+  p_medicine_id      BIGINT,
+  p_quantity_sold    INTEGER,
+  p_customer_name    TEXT    DEFAULT '',
+  p_discount_percent NUMERIC DEFAULT NULL
 )
 RETURNS JSON
 LANGUAGE plpgsql SECURITY DEFINER
 AS $$
 DECLARE
   v_med           medicines%ROWTYPE;
+  v_discount      NUMERIC(5,2);
   v_sale_price    NUMERIC(10,2);
   v_total_revenue NUMERIC(10,2);
   v_total_cost    NUMERIC(10,2);
@@ -78,7 +81,8 @@ BEGIN
     RAISE EXCEPTION 'Insufficient stock. Available: %', v_med.quantity;
   END IF;
 
-  v_sale_price    := ROUND(v_med.mrp * (1 - v_med.discount_percent / 100.0), 2);
+  v_discount      := COALESCE(p_discount_percent, v_med.discount_percent);
+  v_sale_price    := ROUND(v_med.mrp * (1 - v_discount / 100.0), 2);
   v_total_revenue := ROUND(v_sale_price * p_quantity_sold, 2);
   v_total_cost    := ROUND(v_med.cost_price * p_quantity_sold, 2);
   v_profit        := v_total_revenue - v_total_cost;
@@ -89,7 +93,7 @@ BEGIN
     cost_price, total_cost, profit, customer_name
   ) VALUES (
     p_medicine_id, v_med.name, v_med.batch_number, p_quantity_sold,
-    v_med.mrp, v_med.discount_percent, v_sale_price, v_total_revenue,
+    v_med.mrp, v_discount, v_sale_price, v_total_revenue,
     v_med.cost_price, v_total_cost, v_profit, p_customer_name
   ) RETURNING id INTO v_sale_id;
 

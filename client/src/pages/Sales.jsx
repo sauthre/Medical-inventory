@@ -1,11 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Search, ShoppingCart, CheckCircle, AlertCircle, X, ChevronDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, ShoppingCart, CheckCircle, AlertCircle, X, Trash2 } from 'lucide-react';
 import { medicinesApi, salesApi } from '../api';
 
-function SaleBadge({ discount }) {
-  if (discount > 0) return <span className="badge-success">{discount}% OFF</span>;
-  return null;
-}
+const DISCOUNT_OPTIONS = [
+  { key: 'default', label: (d) => `Default (${d}%)` },
+  { key: '0',      label: () => '0%' },
+  { key: '5',      label: () => '5%' },
+  { key: '10',     label: () => '10%' },
+  { key: '20',     label: () => '20%' },
+  { key: 'custom', label: () => 'Custom' },
+];
 
 export default function Sales() {
   const [medicines, setMedicines] = useState([]);
@@ -16,9 +20,13 @@ export default function Sales() {
   const [selected, setSelected] = useState(null);
   const [qty, setQty] = useState(1);
   const [customer, setCustomer] = useState('');
+  const [discountMode, setDiscountMode] = useState('default');
+  const [customDiscount, setCustomDiscount] = useState('');
   const [loading, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const [salesLoading, setSalesLoading] = useState(true);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     medicinesApi.getAll().then(r => setMedicines(r.data));
@@ -47,11 +55,25 @@ export default function Sales() {
     setShowDropdown(true);
   }, [search, medicines]);
 
+  const effectiveDiscount = (() => {
+    if (!selected) return 0;
+    switch (discountMode) {
+      case '0':  return 0;
+      case '5':  return 5;
+      case '10': return 10;
+      case '20': return 20;
+      case 'custom': return parseFloat(customDiscount) || 0;
+      default:   return selected.discount_percent;
+    }
+  })();
+
   const selectMedicine = (med) => {
     setSelected(med);
     setSearch(med.name);
     setShowDropdown(false);
     setQty(1);
+    setDiscountMode('default');
+    setCustomDiscount('');
   };
 
   const clearSelection = () => {
@@ -60,6 +82,8 @@ export default function Sales() {
     setSearchResults([]);
     setQty(1);
     setCustomer('');
+    setDiscountMode('default');
+    setCustomDiscount('');
   };
 
   const showToast = (msg, type = 'success') => {
@@ -71,7 +95,12 @@ export default function Sales() {
     if (!selected) return;
     setSaving(true);
     try {
-      const res = await salesApi.create({ medicine_id: selected.id, quantity_sold: qty, customer_name: customer });
+      const res = await salesApi.create({
+        medicine_id: selected.id,
+        quantity_sold: qty,
+        customer_name: customer,
+        discount_percent: discountMode === 'default' ? null : effectiveDiscount,
+      });
       showToast(`Sale recorded! ₹${res.data.sale.total_revenue.toFixed(2)} — Remaining stock: ${res.data.remaining_stock}`);
       clearSelection();
       medicinesApi.getAll().then(r => setMedicines(r.data));
@@ -83,9 +112,25 @@ export default function Sales() {
     }
   };
 
+  const handleDeleteSale = async () => {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      await salesApi.remove(deleteConfirm.id, deleteConfirm.medicine_id, deleteConfirm.quantity_sold);
+      showToast('Sale deleted and stock restored.');
+      setDeleteConfirm(null);
+      fetchSales();
+      medicinesApi.getAll().then(r => setMedicines(r.data));
+    } catch (err) {
+      showToast('Failed to delete sale', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const fmt = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
-  const salePrice = selected ? (selected.mrp * (1 - selected.discount_percent / 100)) : 0;
+  const salePrice = selected ? (selected.mrp * (1 - effectiveDiscount / 100)) : 0;
   const totalAmount = salePrice * qty;
   const profit = selected ? ((salePrice - selected.cost_price) * qty) : 0;
   const isOverStock = selected && qty > selected.quantity;
@@ -158,7 +203,9 @@ export default function Sales() {
                     <p className="font-semibold text-gray-900">{selected.name}</p>
                     <p className="text-xs text-gray-500">{selected.manufacturer} · {selected.batch_number}</p>
                   </div>
-                  <SaleBadge discount={selected.discount_percent} />
+                  {effectiveDiscount > 0 && (
+                    <span className="badge-success">{effectiveDiscount}% OFF</span>
+                  )}
                 </div>
                 <div className="grid grid-cols-3 gap-2 pt-1">
                   <div className="text-center bg-white rounded-lg p-2">
@@ -174,6 +221,44 @@ export default function Sales() {
                     <p className={`font-bold ${selected.quantity <= 10 ? 'text-amber-600' : 'text-green-600'}`}>{selected.quantity}</p>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Discount Picker */}
+            {selected && (
+              <div>
+                <label className="label">Discount</label>
+                <div className="flex flex-wrap gap-2">
+                  {DISCOUNT_OPTIONS.map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setDiscountMode(key)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        discountMode === key
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {label(selected.discount_percent)}
+                    </button>
+                  ))}
+                </div>
+                {discountMode === 'custom' && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      className="input w-28"
+                      placeholder="e.g. 7.5"
+                      value={customDiscount}
+                      onChange={e => setCustomDiscount(e.target.value)}
+                    />
+                    <span className="text-sm text-gray-500">%</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -208,9 +293,9 @@ export default function Sales() {
                   <span className="text-gray-500">Sale Price × {qty}</span>
                   <span className="text-gray-700">₹{salePrice.toFixed(2)} × {qty}</span>
                 </div>
-                {selected.discount_percent > 0 && (
+                {effectiveDiscount > 0 && (
                   <div className="flex justify-between text-sm text-green-600">
-                    <span>Discount ({selected.discount_percent}%)</span>
+                    <span>Discount ({effectiveDiscount}%)</span>
                     <span>-₹{((selected.mrp - salePrice) * qty).toFixed(2)}</span>
                   </div>
                 )}
@@ -253,7 +338,13 @@ export default function Sales() {
                 <div key={s.id} className="px-4 py-3">
                   <div className="flex items-start justify-between gap-2">
                     <p className="font-medium text-gray-900 text-sm leading-tight">{s.medicine_name}</p>
-                    <p className="text-blue-600 font-bold text-sm flex-shrink-0">₹{s.total_revenue.toFixed(2)}</p>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <p className="text-blue-600 font-bold text-sm">₹{s.total_revenue.toFixed(2)}</p>
+                      <button onClick={() => setDeleteConfirm(s)}
+                        className="p-1 text-gray-300 hover:text-red-500 transition-colors">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-gray-400">
                     <span>Qty: {s.quantity_sold}</span>
@@ -273,16 +364,16 @@ export default function Sales() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">
                   <tr>
-                    {['Medicine', 'Qty', 'MRP', 'Disc%', 'Total', 'Profit', 'Customer', 'Time'].map(h => (
+                    {['Medicine', 'Qty', 'MRP', 'Disc%', 'Total', 'Profit', 'Customer', 'Time', ''].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {salesLoading ? (
-                    <tr><td colSpan={8} className="text-center py-8 text-gray-400">Loading...</td></tr>
+                    <tr><td colSpan={9} className="text-center py-8 text-gray-400">Loading...</td></tr>
                   ) : salesList.length === 0 ? (
-                    <tr><td colSpan={8} className="text-center py-8 text-gray-400">No sales yet</td></tr>
+                    <tr><td colSpan={9} className="text-center py-8 text-gray-400">No sales yet</td></tr>
                   ) : salesList.map(s => (
                     <tr key={s.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3 font-medium text-gray-900 max-w-[160px] truncate">{s.medicine_name}</td>
@@ -299,6 +390,13 @@ export default function Sales() {
                       <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
                         {new Date(s.sale_date).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </td>
+                      <td className="px-4 py-3">
+                        <button onClick={() => setDeleteConfirm(s)}
+                          className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete sale">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -307,6 +405,36 @@ export default function Sales() {
           </div>
         </div>
       </div>
+
+      {/* Delete Sale Confirmation */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Delete Sale?</h3>
+                <p className="text-xs text-gray-400">Stock will be restored automatically</p>
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3 mb-5 text-sm space-y-1">
+              <p className="font-medium text-gray-900">{deleteConfirm.medicine_name}</p>
+              <p className="text-gray-500">Qty: {deleteConfirm.quantity_sold} · Revenue: ₹{deleteConfirm.total_revenue.toFixed(2)}</p>
+              <p className="text-gray-400 text-xs">
+                {new Date(deleteConfirm.sale_date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm(null)} className="btn-secondary flex-1" disabled={deleting}>Cancel</button>
+              <button onClick={handleDeleteSale} className="btn-danger flex-1" disabled={deleting}>
+                {deleting ? 'Deleting...' : 'Delete & Restore'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

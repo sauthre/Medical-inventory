@@ -8,7 +8,7 @@ const UNITS = ['strips', 'bottles', 'vials', 'tablets', 'capsules', 'sachets', '
 const emptyForm = {
   name: '', manufacturer: '', batch_number: '', category: 'General',
   cost_price: '', mrp: '', discount_percent: '0',
-  quantity: '', unit: 'strips', expiry_date: ''
+  quantity: '', unit: 'strips', units_per_pack: '1', expiry_date: ''
 };
 
 function MedicineModal({ open, onClose, onSave, initial }) {
@@ -27,6 +27,7 @@ function MedicineModal({ open, onClose, onSave, initial }) {
         mrp: String(initial.mrp),
         discount_percent: String(initial.discount_percent),
         quantity: String(initial.quantity),
+        units_per_pack: String(initial.units_per_pack || 1),
       } : emptyForm);
       setError('');
       setShowNameDropdown(false);
@@ -76,6 +77,7 @@ function MedicineModal({ open, onClose, onSave, initial }) {
         mrp: parseFloat(form.mrp),
         discount_percent: parseFloat(form.discount_percent || 0),
         quantity: parseInt(form.quantity),
+        units_per_pack: parseInt(form.units_per_pack || 1),
       };
       if (initial?.id) {
         await medicinesApi.update(initial.id, payload);
@@ -199,7 +201,7 @@ function MedicineModal({ open, onClose, onSave, initial }) {
 
           <div className="border-t border-gray-100 pt-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Stock</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               <div>
                 <label className="label">Quantity *</label>
                 <input type="number" min="0" className="input" value={form.quantity}
@@ -210,6 +212,16 @@ function MedicineModal({ open, onClose, onSave, initial }) {
                 <select className="input" value={form.unit} onChange={e => set('unit', e.target.value)}>
                   {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
+              </div>
+              <div>
+                <label className="label">Tabs/Caps per Pack</label>
+                <input type="number" min="1" className="input" value={form.units_per_pack}
+                  onChange={e => set('units_per_pack', e.target.value)} placeholder="1" />
+                <p className="text-xs text-gray-400 mt-1">
+                  {parseInt(form.units_per_pack) > 1
+                    ? `Can sell individual tablets (1/${form.units_per_pack} of a ${form.unit?.replace(/s$/, '')})`
+                    : 'Set > 1 to allow per-tablet selling'}
+                </p>
               </div>
             </div>
           </div>

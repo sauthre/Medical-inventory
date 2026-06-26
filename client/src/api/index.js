@@ -91,12 +91,13 @@ export const salesApi = {
   },
 
   // Calls the atomic PostgreSQL function
-  create: async ({ medicine_id, quantity_sold, customer_name = '', discount_percent = null }) => {
+  create: async ({ medicine_id, quantity_sold, customer_name = '', discount_percent = null, sell_by_unit = false }) => {
     const { data, error } = await supabase.rpc('record_sale', {
       p_medicine_id:      medicine_id,
       p_quantity_sold:    quantity_sold,
       p_customer_name:    customer_name,
       p_discount_percent: discount_percent,
+      p_sell_by_unit:     sell_by_unit,
     });
     if (error) {
       throw { response: { data: { error: error.message } } };

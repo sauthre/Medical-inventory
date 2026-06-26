@@ -6,18 +6,19 @@
 -- ── Tables ──────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS medicines (
-  id            BIGSERIAL PRIMARY KEY,
-  name          TEXT NOT NULL,
-  manufacturer  TEXT DEFAULT '',
-  batch_number  TEXT DEFAULT '',
-  category      TEXT DEFAULT 'General',
-  cost_price    NUMERIC(10,2) NOT NULL CHECK (cost_price >= 0),
-  mrp           NUMERIC(10,2) NOT NULL CHECK (mrp >= 0),
+  id               BIGSERIAL PRIMARY KEY,
+  name             TEXT NOT NULL,
+  manufacturer     TEXT DEFAULT '',
+  batch_number     TEXT DEFAULT '',
+  category         TEXT DEFAULT 'General',
+  cost_price       NUMERIC(10,2) NOT NULL CHECK (cost_price >= 0),
+  mrp              NUMERIC(10,2) NOT NULL CHECK (mrp >= 0),
   discount_percent NUMERIC(5,2) DEFAULT 0 CHECK (discount_percent >= 0 AND discount_percent <= 100),
-  quantity      INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
-  unit          TEXT DEFAULT 'strips',
-  expiry_date   DATE NOT NULL,
-  created_at    TIMESTAMPTZ DEFAULT NOW()
+  quantity         INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+  unit             TEXT DEFAULT 'strips',
+  units_per_pack   INTEGER DEFAULT 1 CHECK (units_per_pack >= 1),
+  expiry_date      DATE NOT NULL,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS sales (
@@ -54,38 +55,53 @@ CREATE POLICY "anon_all_sales"     ON sales     FOR ALL TO anon USING (true) WIT
 
 -- 1. Atomic sale recording (deducts inventory in a transaction)
 --    p_discount_percent: if NULL, uses the medicine's stored discount
+--    p_sell_by_unit: if TRUE, p_quantity_sold is individual tablets/units, not full packs
 CREATE OR REPLACE FUNCTION record_sale(
   p_medicine_id      BIGINT,
   p_quantity_sold    INTEGER,
   p_customer_name    TEXT    DEFAULT '',
-  p_discount_percent NUMERIC DEFAULT NULL
+  p_discount_percent NUMERIC DEFAULT NULL,
+  p_sell_by_unit     BOOLEAN DEFAULT FALSE
 )
 RETURNS JSON
 LANGUAGE plpgsql SECURITY DEFINER
 AS $$
 DECLARE
-  v_med           medicines%ROWTYPE;
-  v_discount      NUMERIC(5,2);
-  v_sale_price    NUMERIC(10,2);
-  v_total_revenue NUMERIC(10,2);
-  v_total_cost    NUMERIC(10,2);
-  v_profit        NUMERIC(10,2);
-  v_sale_id       BIGINT;
+  v_med              medicines%ROWTYPE;
+  v_discount         NUMERIC(5,2);
+  v_pack_sale_price  NUMERIC(10,4);
+  v_total_revenue    NUMERIC(10,2);
+  v_total_cost       NUMERIC(10,2);
+  v_profit           NUMERIC(10,2);
+  v_sale_id          BIGINT;
+  v_packs_to_deduct  INTEGER;
+  v_utp              INTEGER;
 BEGIN
   SELECT * INTO v_med FROM medicines WHERE id = p_medicine_id FOR UPDATE;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Medicine not found';
   END IF;
-  IF v_med.quantity < p_quantity_sold THEN
-    RAISE EXCEPTION 'Insufficient stock. Available: %', v_med.quantity;
+
+  v_utp             := COALESCE(v_med.units_per_pack, 1);
+  v_discount        := COALESCE(p_discount_percent, v_med.discount_percent);
+  v_pack_sale_price := ROUND(v_med.mrp * (1 - v_discount / 100.0), 4);
+
+  IF p_sell_by_unit AND v_utp > 1 THEN
+    v_packs_to_deduct := CEIL(p_quantity_sold::NUMERIC / v_utp);
+    v_total_revenue   := ROUND((v_pack_sale_price / v_utp) * p_quantity_sold, 2);
+    v_total_cost      := ROUND((v_med.cost_price::NUMERIC / v_utp) * p_quantity_sold, 2);
+  ELSE
+    v_packs_to_deduct := p_quantity_sold;
+    v_total_revenue   := ROUND(v_pack_sale_price * p_quantity_sold, 2);
+    v_total_cost      := ROUND(v_med.cost_price * p_quantity_sold, 2);
   END IF;
 
-  v_discount      := COALESCE(p_discount_percent, v_med.discount_percent);
-  v_sale_price    := ROUND(v_med.mrp * (1 - v_discount / 100.0), 2);
-  v_total_revenue := ROUND(v_sale_price * p_quantity_sold, 2);
-  v_total_cost    := ROUND(v_med.cost_price * p_quantity_sold, 2);
-  v_profit        := v_total_revenue - v_total_cost;
+  IF v_med.quantity < v_packs_to_deduct THEN
+    RAISE EXCEPTION 'Insufficient stock. Available: % %', v_med.quantity, v_med.unit;
+  END IF;
+
+  v_profit := v_total_revenue - v_total_cost;
 
   INSERT INTO sales (
     medicine_id, medicine_name, batch_number, quantity_sold,
@@ -93,17 +109,17 @@ BEGIN
     cost_price, total_cost, profit, customer_name
   ) VALUES (
     p_medicine_id, v_med.name, v_med.batch_number, p_quantity_sold,
-    v_med.mrp, v_discount, v_sale_price, v_total_revenue,
+    v_med.mrp, v_discount, ROUND(v_pack_sale_price, 2), v_total_revenue,
     v_med.cost_price, v_total_cost, v_profit, p_customer_name
   ) RETURNING id INTO v_sale_id;
 
-  UPDATE medicines SET quantity = quantity - p_quantity_sold WHERE id = p_medicine_id;
+  UPDATE medicines SET quantity = quantity - v_packs_to_deduct WHERE id = p_medicine_id;
 
   RETURN json_build_object(
     'sale_id',         v_sale_id,
     'total_revenue',   v_total_revenue,
     'profit',          v_profit,
-    'remaining_stock', v_med.quantity - p_quantity_sold
+    'remaining_stock', v_med.quantity - v_packs_to_deduct
   );
 END;
 $$;

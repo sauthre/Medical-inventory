@@ -22,6 +22,7 @@ export default function Sales() {
   const [customer, setCustomer] = useState('');
   const [discountMode, setDiscountMode] = useState('default');
   const [customDiscount, setCustomDiscount] = useState('');
+  const [sellByUnit, setSellByUnit] = useState(false);
   const [loading, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const [salesLoading, setSalesLoading] = useState(true);
@@ -74,6 +75,7 @@ export default function Sales() {
     setQty(1);
     setDiscountMode('default');
     setCustomDiscount('');
+    setSellByUnit(false);
   };
 
   const clearSelection = () => {
@@ -84,6 +86,7 @@ export default function Sales() {
     setCustomer('');
     setDiscountMode('default');
     setCustomDiscount('');
+    setSellByUnit(false);
   };
 
   const showToast = (msg, type = 'success') => {
@@ -100,8 +103,10 @@ export default function Sales() {
         quantity_sold: qty,
         customer_name: customer,
         discount_percent: discountMode === 'default' ? null : effectiveDiscount,
+        sell_by_unit: sellByUnit,
       });
-      showToast(`Sale recorded! ₹${res.data.sale.total_revenue.toFixed(2)} — Remaining stock: ${res.data.remaining_stock}`);
+      const stockLabel = `${res.data.remaining_stock} ${selected.unit}`;
+      showToast(`Sale recorded! ₹${res.data.sale.total_revenue.toFixed(2)} — Stock left: ${stockLabel}`);
       clearSelection();
       medicinesApi.getAll().then(r => setMedicines(r.data));
       fetchSales();
@@ -130,10 +135,17 @@ export default function Sales() {
 
   const fmt = (n) => `₹${Number(n || 0).toFixed(2)}`;
 
-  const salePrice = selected ? (selected.mrp * (1 - effectiveDiscount / 100)) : 0;
-  const totalAmount = salePrice * qty;
-  const profit = selected ? ((salePrice - selected.cost_price) * qty) : 0;
-  const isOverStock = selected && qty > selected.quantity;
+  const utp = selected?.units_per_pack || 1;
+  const hasSubUnits = utp > 1;
+  const packSalePrice = selected ? (selected.mrp * (1 - effectiveDiscount / 100)) : 0;
+  const unitSalePrice = sellByUnit ? packSalePrice / utp : packSalePrice;
+  const salePrice = unitSalePrice; // used for display
+  const totalAmount = unitSalePrice * qty;
+  const profit = selected
+    ? ((unitSalePrice - selected.cost_price / (sellByUnit ? utp : 1)) * qty)
+    : 0;
+  const packsConsumed = sellByUnit ? Math.ceil(qty / utp) : qty;
+  const isOverStock = selected && packsConsumed > selected.quantity;
 
   return (
     <div className="space-y-6">
@@ -224,6 +236,32 @@ export default function Sales() {
               </div>
             )}
 
+            {/* Pack / Unit toggle */}
+            {selected && hasSubUnits && (
+              <div>
+                <label className="label">Selling In</label>
+                <div className="flex rounded-xl border border-gray-200 overflow-hidden">
+                  <button type="button" onClick={() => { setSellByUnit(false); setQty(1); }}
+                    className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+                      !sellByUnit ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}>
+                    {selected.unit} (full pack)
+                  </button>
+                  <button type="button" onClick={() => { setSellByUnit(true); setQty(1); }}
+                    className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+                      sellByUnit ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}>
+                    Tablets / Units
+                  </button>
+                </div>
+                {sellByUnit && (
+                  <p className="text-xs text-gray-400 mt-1.5">
+                    {utp} tablets = 1 {selected.unit?.replace(/s$/, '')} · ₹{packSalePrice.toFixed(2)} per {selected.unit?.replace(/s$/, '')} → ₹{unitSalePrice.toFixed(2)} per tablet
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Discount Picker */}
             {selected && (
               <div>
@@ -264,7 +302,9 @@ export default function Sales() {
 
             {/* Quantity */}
             <div>
-              <label className="label">Quantity</label>
+              <label className="label">
+                Quantity {selected && sellByUnit ? '(tablets / units)' : selected ? `(${selected.unit})` : ''}
+              </label>
               <div className="flex items-center gap-3">
                 <button onClick={() => setQty(q => Math.max(1, q - 1))}
                   className="w-10 h-10 rounded-lg border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-lg font-medium">—</button>
@@ -273,9 +313,17 @@ export default function Sales() {
                 <button onClick={() => setQty(q => q + 1)}
                   className="w-10 h-10 rounded-lg border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-lg font-medium">+</button>
               </div>
+              {selected && sellByUnit && !isOverStock && qty > 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  {qty} tablet{qty > 1 ? 's' : ''} → {packsConsumed} {selected.unit?.replace(/s$/, '')} consumed from stock ({selected.quantity} remaining)
+                </p>
+              )}
               {isOverStock && (
                 <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" /> Exceeds available stock ({selected.quantity})
+                  <AlertCircle className="w-3 h-3" />
+                  {sellByUnit
+                    ? `${qty} tablets needs ${packsConsumed} ${selected.unit} but only ${selected.quantity} available`
+                    : `Exceeds available stock (${selected.quantity} ${selected.unit})`}
                 </p>
               )}
             </div>
@@ -289,14 +337,20 @@ export default function Sales() {
             {/* Total */}
             {selected && (
               <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                {sellByUnit && (
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>Price per tablet</span>
+                    <span>₹{unitSalePrice.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Sale Price × {qty}</span>
-                  <span className="text-gray-700">₹{salePrice.toFixed(2)} × {qty}</span>
+                  <span className="text-gray-500">{sellByUnit ? 'Per tablet' : 'Sale Price'} × {qty}</span>
+                  <span className="text-gray-700">₹{unitSalePrice.toFixed(2)} × {qty}</span>
                 </div>
                 {effectiveDiscount > 0 && (
                   <div className="flex justify-between text-sm text-green-600">
                     <span>Discount ({effectiveDiscount}%)</span>
-                    <span>-₹{((selected.mrp - salePrice) * qty).toFixed(2)}</span>
+                    <span>-₹{((selected.mrp / (sellByUnit ? utp : 1) - unitSalePrice) * qty).toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold border-t border-gray-200 pt-2 mt-2">
@@ -307,6 +361,12 @@ export default function Sales() {
                   <span>Est. Profit</span>
                   <span>₹{profit.toFixed(2)}</span>
                 </div>
+                {sellByUnit && (
+                  <div className="flex justify-between text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mt-1">
+                    <span>Stock deducted</span>
+                    <span>{packsConsumed} {selected.unit} from inventory</span>
+                  </div>
+                )}
               </div>
             )}
 

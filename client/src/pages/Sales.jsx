@@ -239,10 +239,37 @@ export default function Sales() {
         {/* Sales History */}
         <div className="lg:col-span-3">
           <div className="card !p-0 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100">
+            <div className="px-4 py-4 border-b border-gray-100">
               <h3 className="font-semibold text-gray-900">Recent Sales</h3>
             </div>
-            <div className="overflow-x-auto">
+
+            {/* Mobile card list */}
+            <div className="lg:hidden divide-y divide-gray-50">
+              {salesLoading ? (
+                <p className="text-center py-8 text-gray-400 text-sm">Loading…</p>
+              ) : salesList.length === 0 ? (
+                <p className="text-center py-8 text-gray-400 text-sm">No sales yet</p>
+              ) : salesList.map(s => (
+                <div key={s.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-medium text-gray-900 text-sm leading-tight">{s.medicine_name}</p>
+                    <p className="text-blue-600 font-bold text-sm flex-shrink-0">₹{s.total_revenue.toFixed(2)}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-gray-400">
+                    <span>Qty: {s.quantity_sold}</span>
+                    <span className="text-green-600">Profit: ₹{s.profit.toFixed(2)}</span>
+                    {s.discount_percent > 0 && <span className="text-amber-600">{s.discount_percent}% off</span>}
+                    {s.customer_name && <span>{s.customer_name}</span>}
+                  </div>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    {new Date(s.sale_date).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop table */}
+            <div className="hidden lg:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">
                   <tr>

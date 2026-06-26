@@ -129,7 +129,7 @@ export default function Dashboard() {
       </div>
 
       {/* Revenue Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-3 lg:gap-4">
         <div className="card text-center">
           <p className="text-sm text-gray-500">Total Revenue (All Time)</p>
           <p className="text-2xl font-bold text-blue-600 mt-1">{fmt(s.overall?.total_revenue)}</p>
@@ -159,7 +159,27 @@ export default function Dashboard() {
         {recentSales.length === 0 ? (
           <p className="text-gray-400 text-sm text-center py-8">No sales recorded yet</p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Mobile list */}
+          <div className="lg:hidden -mx-2 divide-y divide-gray-50">
+            {recentSales.map(sale => (
+              <div key={sale.id} className="px-2 py-3 flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-medium text-gray-900 text-sm">{sale.medicine_name}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Qty {sale.quantity_sold} · {sale.customer_name || 'Walk-in'} ·{' '}
+                    {new Date(sale.sale_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-blue-600 font-semibold text-sm">{fmt(sale.total_revenue)}</p>
+                  <p className="text-green-600 text-xs">{fmt(sale.profit)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden lg:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b border-gray-100">
@@ -187,6 +207,7 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

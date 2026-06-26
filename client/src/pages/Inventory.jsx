@@ -219,7 +219,8 @@ export default function Inventory() {
           <p className="text-gray-500 text-sm mt-1">{medicines.length} medicines found</p>
         </div>
         <button onClick={() => { setEditTarget(null); setModalOpen(true); }} className="btn-primary">
-          <Plus className="w-4 h-4" /> Add Medicine
+          <Plus className="w-4 h-4" />
+          <span className="hidden sm:inline">Add Medicine</span>
         </button>
       </div>
 
@@ -240,8 +241,70 @@ export default function Inventory() {
         </select>
       </div>
 
-      {/* Table */}
-      <div className="card !p-0 overflow-hidden">
+      {/* ── Mobile card list ─────────────────────────────────── */}
+      <div className="lg:hidden space-y-3">
+        {loading ? (
+          <div className="text-center py-12 text-gray-400">Loading...</div>
+        ) : medicines.length === 0 ? (
+          <div className="card text-center py-12">
+            <Package className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+            <p className="text-gray-400">No medicines found</p>
+          </div>
+        ) : medicines.map((m) => {
+          const salePrice = (m.mrp * (1 - m.discount_percent / 100)).toFixed(2);
+          const exp = expiryStatus(m.expiry_date);
+          return (
+            <div key={m.id} className="card !p-4 space-y-3">
+              {/* Name + actions */}
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-gray-900">{m.name}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{m.manufacturer} · {m.batch_number || 'No batch'}</p>
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={() => { setEditTarget(m); setModalOpen(true); }}
+                    className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => setDeleteConfirm(m)}
+                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              {/* Pricing row */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-gray-50 rounded-lg p-2 text-center">
+                  <p className="text-xs text-gray-400">Cost</p>
+                  <p className="text-sm font-semibold text-gray-700">₹{m.cost_price}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-2 text-center">
+                  <p className="text-xs text-gray-400">MRP</p>
+                  <p className="text-sm font-semibold text-gray-700">₹{m.mrp}</p>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-2 text-center">
+                  <p className="text-xs text-blue-400">Sale Price</p>
+                  <p className="text-sm font-semibold text-blue-600">₹{salePrice}</p>
+                </div>
+              </div>
+              {/* Stock + badges */}
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="badge-info">{m.category}</span>
+                  {m.discount_percent > 0 && <span className="badge-success">{m.discount_percent}% off</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">{stockStatus(m.quantity)} <span className="text-xs text-gray-400">{m.unit}</span></span>
+                  <span className={exp.cls}>{exp.label}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Desktop table ─────────────────────────────────────── */}
+      <div className="hidden lg:block card !p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">

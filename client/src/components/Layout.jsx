@@ -1,19 +1,23 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ShoppingCart,
-  AlertTriangle, TrendingUp, Activity
+  AlertTriangle, TrendingUp, Activity, LogOut
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 const navItems = [
-  { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { path: '/inventory', icon: Package, label: 'Inventory' },
-  { path: '/sales', icon: ShoppingCart, label: 'Sales' },
-  { path: '/expiry', icon: AlertTriangle, label: 'Expiry Alert' },
-  { path: '/revenue', icon: TrendingUp, label: 'Revenue' },
+  { path: '/',          icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/inventory', icon: Package,         label: 'Inventory' },
+  { path: '/sales',     icon: ShoppingCart,    label: 'Sales' },
+  { path: '/expiry',    icon: AlertTriangle,   label: 'Expiry Alert' },
+  { path: '/revenue',   icon: TrendingUp,      label: 'Revenue' },
 ];
 
-export default function Layout({ children }) {
-  const location = useLocation();
+export default function Layout({ children, session }) {
+  const email    = session?.user?.email ?? '';
+  const initials = email[0]?.toUpperCase() ?? '?';
+
+  const handleSignOut = () => supabase.auth.signOut();
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -37,9 +41,7 @@ export default function Layout({ children }) {
               key={path}
               to={path}
               end={path === '/'}
-              className={({ isActive }) =>
-                `sidebar-link ${isActive ? 'active' : ''}`
-              }
+              className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
             >
               <Icon className="w-5 h-5 flex-shrink-0" />
               {label}
@@ -47,16 +49,21 @@ export default function Layout({ children }) {
           ))}
         </nav>
 
-        <div className="p-4 border-t border-slate-700">
+        {/* User + sign-out */}
+        <div className="p-4 border-t border-slate-700 space-y-3">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center">
-              <span className="text-white text-xs font-bold">CH</span>
+            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-xs font-bold">{initials}</span>
             </div>
-            <div>
-              <p className="text-white text-sm font-medium">Chemist Shop</p>
-              <p className="text-slate-400 text-xs">Admin</p>
-            </div>
+            <p className="text-slate-300 text-sm truncate">{email}</p>
           </div>
+          <button
+            onClick={handleSignOut}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 text-sm transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign out
+          </button>
         </div>
       </aside>
 

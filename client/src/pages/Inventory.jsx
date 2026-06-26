@@ -51,7 +51,15 @@ function MedicineModal({ open, onClose, onSave, initial }) {
       onSave();
       onClose();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save medicine');
+      const msg = err.message || err.response?.data?.error || 'Failed to save medicine';
+      const hint = msg.includes('row-level security')
+        ? 'RLS policy error — make sure you ran supabase/schema.sql in the Supabase SQL Editor.'
+        : msg.includes('does not exist')
+        ? 'Table not found — please run supabase/schema.sql in the Supabase SQL Editor.'
+        : msg.includes('Invalid API key') || msg.includes('apikey')
+        ? 'Invalid Supabase key — check VITE_SUPABASE_ANON_KEY in your environment variables.'
+        : null;
+      setError(hint || msg);
     } finally {
       setSaving(false);
     }

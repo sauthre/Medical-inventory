@@ -1,9 +1,12 @@
 import { supabase } from '../lib/supabase';
 
-// Throws on Supabase error, returns { data } on success — same shape as before.
+// Throws a normalized error with .message, returns { data } on success.
 const ok = async (queryPromise) => {
   const { data, error } = await queryPromise;
-  if (error) throw error;
+  if (error) {
+    const msg = error.message || error.details || 'Supabase error';
+    throw Object.assign(new Error(msg), { response: { data: { error: msg } } });
+  }
   return { data };
 };
 

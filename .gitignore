@@ -1,6 +1,7 @@
 node_modules/
 client/node_modules/
 client/dist/
-server/inventory.db
+client/.env.local
+.env.local
 *.db
-.env
+.DS_Store
